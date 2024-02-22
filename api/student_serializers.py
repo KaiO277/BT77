@@ -6,14 +6,12 @@ from django.utils import timezone
 
 
 class StudentSerializer(serializers.ModelSerializer):
-    class_info = serializers.SerializerMethodField() 
+    # class_info = serializers.SerializerMethodField() 
     year_birth = serializers.SerializerMethodField()
     
     class Meta:
         model = student
         fields = '__all__'
-        # fields = ['id','first_name', 'last_name','age','year_birth', 'class_n']
-        # exclude = ['age', 'avatar']
 
     def create(self, validated_data):
         avatar = validated_data.pop('avatar', None)
@@ -39,13 +37,6 @@ class StudentSerializer(serializers.ModelSerializer):
     
     def get_year_birth(self, data):
         return timezone.now().year - data.age
-    
-    def get_class_info(self, obj):
-        class_info = {
-            "id": obj.class_n.id,
-            "name": obj.class_n.name,
-        }
-        return class_info
 
 class ClassSerializer(serializers.ModelSerializer):
     student = StudentSerializer(many=True, read_only=True)
