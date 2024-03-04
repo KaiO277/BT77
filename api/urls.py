@@ -1,10 +1,17 @@
 from django.urls import path, include
 from . import views
 from rest_framework.routers import DefaultRouter
+from .views import AuthorModelViewSet
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 
+# router = DefaultRouter()
+# router.register('st', views.StudentViewSet, basename='st')
 
 router = DefaultRouter()
-router.register('st', views.StudentViewSet, basename='st')
+router.register(r'authors', AuthorModelViewSet, basename='author')
 
 custom_get_by_id = views.StudentMVS.as_view({
     'get': 'custom_get_by_id'
@@ -23,7 +30,7 @@ add_st_api = views.StudentMVS.as_view({
 })
 
 test_update = views.StudentMVS.as_view({
-    'put':'test_update'
+    'patch':'test_update'
 })
 
 test_delete = views.StudentMVS.as_view({
@@ -62,7 +69,49 @@ get_test_path_params = views.StudentMVS.as_view({
     'get':'PathParams'
 })
 
+add_new_class = views.StudentMVS.as_view({
+    'post':'add_new_class'
+})
+
+get_all_class2 = views.StudentMVS2.as_view({
+    'get':'get_all_class'
+})
+
+get_all_class_limit = views.StudentMVS2.as_view({
+    'get':'get_all_class_limit'
+})
+
+get_all_class_with_age = views.StudentMVS2.as_view({
+    'get':'get_all_class_with_age'
+})
+
+get_all_class_info = views.StudentMVS2.as_view({
+    'get':'get_all_class_info'
+})
+
+add_class = views.StudentMVS2.as_view({
+    'post':'create_class'
+})
+
+update_class = views.StudentMVS2.as_view({
+    'patch':'update_class'
+})
+
+login_user = views.UserLogin.as_view({
+    'post':'login_user'
+})
+
+get_class_by_id = views.StudentMVS2.as_view({
+    'get':'get_class_by_id'
+})
+
+delete_class_by_id = views.StudentMVS2.as_view({
+    'delete': 'delete_class'
+})
+
 urlpatterns = [
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     # path('list-students', views.ListCreateStudentView.as_view()),
     # path('student', views.StudentViewset.as_view()),
     # path('student/<int:id>', views.StudentViewset.as_view()),
@@ -83,4 +132,14 @@ urlpatterns = [
     path('add-st-new/', add_st_api, name="add-st-new"),
     path('test-update/', test_update, name='test_update'),
     path('test-delete/', test_delete, name='test_delete'),
+    path('add-new-class/', add_new_class, name='add-new-class'),
+    path('get-all-class2/', get_all_class2, name='get_all_class2'),
+    path('get-all-class-limit/', get_all_class_limit, name='get_all_class_limit'),
+    path('get-all-class-with-age/', get_all_class_with_age, name='get-all-class-with-age'),
+    path('get-all-class-info/', get_all_class_info, name='get_all_class_info'),
+    path('create-add/', add_class, name='create-add'),
+    path('update-class/<int:pk>/', update_class, name='update-class'),
+    path('login-user/', login_user, name='login-user'),
+    path('get-class-by-id/<int:pk>/', get_class_by_id, name='get-class-by-id'),
+    path('delete-class-by-id/<int:pk>/', delete_class_by_id, name='delete-class-by-id'),
 ]

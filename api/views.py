@@ -1,13 +1,12 @@
 from django.shortcuts import render
-from student.models import student, Class
+from student.models import student, Class, Author, Book
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from . import models
 # from . import views
 # from . import student_serializers
-from .student_serializers import StudentSerializer, ClassSerializer
-from rest_framework.views import APIView
+from .student_serializers import UserLoginSerializer,StudentSerializer, AuthorSerializer, AuthorSerializerCustom, ClassSerializer
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -16,6 +15,20 @@ from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils.text import slugify
 from .statuscode import StatusCode
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+
+class AuthorModelViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    queryset= Author.objects.all()
+    
+    def get_serializer_class(self):
+        return self.get_author_serializer()
+
+    def get_author_serializer(self):
+        if self.action == 'list':
+            return AuthorSerializer
+        else:
+            return AuthorSerializerCustom
 
 class studentModelPagination(PageNumberPagination):
     page_size = 2  # Set the page size
@@ -241,16 +254,138 @@ class StudentViewSet(viewsets.ModelViewSet):
     
 
 def validate_age(age):
-        return student.objects.filter(age=age).exists()
+    return student.objects.filter(age=age).exists()
 
 def validate_email(email):
-        return student.objects.filter(email=email).exists() 
+    return student.objects.filter(email=email).exists() 
+
+def check_slug(name):
+    slug = slugify(name)
+    return Class.objects.filter(slug=slug).exists()
+
+class UserLogin(viewsets.ModelViewSet):
+
+    @action(detail=False, methods=['post'])
+    def login_user(self, request):
+        serializer = UserLoginSerializer(data=request.data)
+        if serializer.is_valid():
+            return Response(
+                data=serializer.validated_data,
+                status=status.HTTP_200_OK
+            )
+        return Response(
+            data=serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+class StudentMVS2(viewsets.ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = Class.objects.all()
+
+    @action(detail=True, methods=['get'])
+    def get_class_by_id(self, request, pk=None):
+        try:
+            classes = Class.objects.get(pk=pk)
+        except Class.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = ClassSerializer(classes)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['delete'])
+    def delete_class(self, request, pk=None):
+        try:
+            classes = Class.objects.get(pk=pk)
+        except Class.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = ClassSerializer(classes)
+        return Response(status=status.HTTP_204_NO_CONTENT)        
+
+    @action(detail=False, methods=['patch'])
+    def update_class(self, request, pk=None):
+        try:
+            classes = Class.objects.get(pk=pk)
+        except Class.DoesNotExist:
+            return Response({"message":"Error"}, status=status.HTTP_400_BAD_REQUEST)
+        if 'name' in request.data:
+            if check_slug(request.data['name']):
+                return Response(
+                    {"Message":"Slug already exists"}, status=StatusCode.SLUG_EXIS
+                )    
+            else:
+                serializer = ClassSerializer(classes, data=request.data, partial=True)
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response(serializer.data, status=status.HTTP_200_OK)
+                else: 
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
+    def create_class(self, request):
+        name = request.data.get('name')
+        if check_slug(name):
+            return Response({"message":"tên lớp đã trùng"}, status=StatusCode.SLUG_EXIS)
+        else:
+            serializer = ClassSerializer(data=request.data)  # Pass 'data' argument
+            print(request.data)
+            if serializer.is_valid():  # Check if the serializer is valid
+                serializer.save()
+                return Response({"data": serializer.data}, status=status.HTTP_200_OK)
+            else:
+                return Response({"message": "Dữ liệu không hợp lệ"}, status=status.HTTP_400_BAD_REQUEST)
+        
+    @action(detail=False, methods=['get'])
+    def get_all_class(self, request):
+        number_limit = int(self.request.query_params.get('so_luong',0))
+        if number_limit >0:
+            classes = Class.objects.all()[:number_limit]
+        else:
+            classes = Class.objects.all()        
+        serializer = ClassSerializer(classes, many=True)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods="get")
+    def get_all_class_limit(self, request):
+        number_limit = int(self.request.query_params.get('so_luong', 0))
+        classes = Class.objects.all()
+        serializer = ClassSerializer(classes, many=True)
+
+        if number_limit > 0:
+            # Sử dụng filter và lambda để lọc dữ liệu
+            serializer_data = list(filter(lambda obj: obj.get('number_st', 0) <= number_limit, serializer.data))
+            return Response(data=serializer_data, status=status.HTTP_200_OK)
+
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=["get"])
+    def get_all_class_with_age(self, request):
+        min = self.request.query_params.get('age_min')
+        max = self.request.query_params.get('age_max')
+
+        min = int(min) if min is not None else 0
+        max = int(max) if max is not None else int('inf')
+
+        classes = Class.objects.filter(student__age__gt=min, student__age__lt=max)
+        serializer = ClassSerializer(classes, many=True)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
+    
+    # def get_serializer_class(self):
+    #     if self.action == 'list':
+    #         return ClassSerializer
+    #     else:
+    #         return ClassSerializerCustom
+
+    # @action(detail=False, methods=["get"])
+    # def get_all_class_info(self, request):
+    #     class_instance = self.get_object()
+    #     serializer = self.get_serializer(class_instance)
+    #     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class StudentMVS(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     queryset = student.objects.all()
     serializer_class = StudentSerializer
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     @action(detail=True, methods=['get'])
     def get_all_class_by_user(self, request, *args, **kwargs):
@@ -267,6 +402,13 @@ class StudentMVS(viewsets.ModelViewSet):
             status=status.HTTP_200_OK
         )   
 
+    @action(detail=False, methods=['post'])
+    def add_new_class(self, request):
+        serializer = ClassSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=False, methods=['post'])
     def add_st_new(self, request):
@@ -291,6 +433,16 @@ class StudentMVS(viewsets.ModelViewSet):
                     status = StatusCode.EMAIL_ALREADY_EXIS
                 )
 
+    # @action(detail=False, methods=['get'])
+    # def get_all_class(self, request):
+    #     user = request.user
+    #     number_limit = int(self.request.query_params.get('so_luong',0))
+    #     if number_limit >0:
+    #         classes = Class.objects.all()[:number_limit]
+    #     else:
+    #         classes = Class.objects.all()        
+    #     serializer = ClassSerializer(classes, many=True)
+    #     return Response(data=serializer.data, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['get'])
     def get_all_class(self, request):
@@ -432,31 +584,46 @@ class StudentMVS(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def custom_create_st(self, request):
-        age = request.data.get('age')
-        email = request.data.get('email')
-        serializer = self.get_serializer(data=request.data)
+        # age = request.data.get('age')
+        # email = request.data.get('email')
+        # serializer = self.get_serializer(data=request.data)
+        # if serializer.is_valid():
+        #     if validate_age(age) & validate_email(email):
+        #         return Response(
+        #             data={
+        #                 "message":"email and age already exis"
+        #             }, status=StatusCode.AGE_AND_EMAIL_EXIS
+        #         )
+        #     elif validate_email(email):
+        #         return Response(
+        #             data={"message":"email already exis"}, 
+        #             status=StatusCode.EMAIL_ALREADY_EXIS
+        #         )
+        #     elif validate_age(age):
+        #         return Response(
+        #             data={"message":"age already exis"},
+        #             status=StatusCode.AGE_ALREADY_EXIS
+        #         )
+        #     else:
+        #         serializer.save()
+        #         return Response({"status": "success", "data": serializer.data}, status=status.HTTP_200_OK)
+        # else:
+        #     return Response({"status": "error", "data": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(data=request.data, many=True)
         if serializer.is_valid():
-            if validate_age(age) & validate_email(email):
-                return Response(
-                    data={
-                        "message":"email and age already exis"
-                    }, status=StatusCode.AGE_AND_EMAIL_EXIS
-                )
-            elif validate_email(email):
-                return Response(
-                    data={"message":"email already exis"}, 
-                    status=StatusCode.EMAIL_ALREADY_EXIS
-                )
-            elif validate_age(age):
-                return Response(
-                    data={"message":"age already exis"},
-                    status=StatusCode.AGE_ALREADY_EXIS
-                )
-            else:
-                serializer.save()
-                return Response({"status": "success", "data": serializer.data}, status=status.HTTP_200_OK)
+            serializer.save()
+            return Response({"status": "success", "data": serializer.data}, status=status.HTTP_200_OK)
         else:
-            return Response({"status": "error", "data": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"status": "error", "data": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)   
+        
+    @action(detail=False, methods=['post'])
+    def custom_create_st_new(self, request):
+        serializer = self.get_serializer(data=request.data, many=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"status": "success", "data": serializer.data}, status=status.HTTP_200_OK)
+        else:
+            return Response({"status": "error", "data": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)    
 
     @action(detail=False, methods=['delete'])
     def test_delete(self, request):
@@ -472,7 +639,7 @@ class StudentMVS(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-    @action(detail=False, methods=['put'])
+    @action(detail=True, methods=['patch'])
     def test_update(self, request):
         try:
             student.objects.filter(first_name="nghia00").update(age=22)
@@ -481,9 +648,9 @@ class StudentMVS(viewsets.ModelViewSet):
                 status=status.HTTP_200_OK
             )
         except student.DoesNotExist:
-            return Response(data={"message":"student..."}) 
+            return Response(data={"message":"student..."}, status=status.HTTP_404_NOT_FOUND) 
     
-    @action(detail=False, methods=['get'])
+    @action(detail=True, methods=['get'])
     def get_all_student(self, request):
         students = student.objects.all().select_related('class_n')
         serializer = StudentSerializer(students, many=True)
